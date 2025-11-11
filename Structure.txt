@@ -1,0 +1,26 @@
+dsa-question-api/
+├── .env.local
+├── .git/
+├── .gitignore
+├── app/
+│   ├── api/
+│   │   ├── generate-question/
+│   │   │   └── route.ts
+│   │   └── questions/
+│   │       └── route.ts
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── components/
+│   └── ui/
+│       └── code-block.tsx
+├── lib/
+│   └── mongodb.ts
+├── models/
+│   └── question-model.ts
+├── node_modules/
+├── package.json
+├── next.config.mjs
+├── postcss.config.js
+├── tailwind.config.ts
+└── tsconfig.json
