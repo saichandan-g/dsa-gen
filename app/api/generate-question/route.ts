@@ -1,6 +1,6 @@
 // app/api/generate-question/route.ts
 import { type NextRequest, NextResponse } from "next/server"
-import { getPool } from "@/lib/postgres"
+import { query, resetProblemsSequence } from "@/lib/rds"
 import { insertQuestion } from "@/lib/questions-repo"
 import { callAIProviderWithFallback, getProviderFromModel, getModelFromSelection, AIProvider, ProviderConfig } from '../utils'; // Import AI utilities
 
@@ -218,7 +218,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`📝 Generating ${count} ${topic} questions with ${selectedAIModel}...`)
 
-    const pool = getPool()
+    // Attempt to reset the sequence before any insertions
+    await resetProblemsSequence();
     
     if (typeof count !== "number" || count < 1 || count > 10)
       return NextResponse.json({ error: "Invalid 'count'. Must be 1..10" }, { status: 400 })
@@ -243,7 +244,7 @@ export async function POST(request: NextRequest) {
           throw new Error("Generated JSON missing required fields")
         }
 
-        const row = await insertQuestion(pool, {
+        const row = await insertQuestion({
           title: obj.title,
           difficulty: obj.difficulty,
           question: obj.question,

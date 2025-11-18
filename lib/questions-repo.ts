@@ -1,5 +1,5 @@
 // lib/questions-repo.ts
-import { Pool } from "pg"
+import { query } from "./rds"
 
 type GeneratedQuestion = {
   title: string
@@ -33,7 +33,6 @@ type GeneratedQuestion = {
   }
 }
 export async function getExistingTitles(
-  pool: Pool,
   opts: { topic?: string; difficulty?: "Easy" | "Medium" | "Hard"; limit?: number } = {}
 ) {
   // Pull the most relevant titles for dedup checks.
@@ -56,19 +55,22 @@ export async function getExistingTitles(
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""
   const sql = `
     SELECT title
-    FROM public.questions
+    FROM public.problems
     ${where}
     ORDER BY created_at DESC
     LIMIT ${Number.isFinite(opts.limit) ? opts.limit : 200};
   `
-  const { rows } = await pool.query(sql, params)
+  const { rows, error } = await query(sql, params)
+  if (error) {
+    throw error;
+  }
   // Return case-normalized titles to make prompt rules simpler
   return rows.map((r: { title: string }) => (r.title as string).trim())
 }
 // INSERT and return the auto id
-export async function insertQuestion(pool: Pool, q: GeneratedQuestion) {
+export async function insertQuestion(q: GeneratedQuestion) {
   const sql = `
-    INSERT INTO public.questions
+    INSERT INTO public.problems
       (title, difficulty, question, input_format, output_format, constraints_text,
        sample_input, sample_output, hint, hidden_inputs, hidden_outputs,
        tags, companies, topic_category, subtopics, metadata)
@@ -99,6 +101,9 @@ export async function insertQuestion(pool: Pool, q: GeneratedQuestion) {
     JSON.stringify(m)                   // metadata jsonb
   ]
 
-  const res = await pool.query(sql, params)
-  return res.rows[0] as { id: number; title: string; created_at: string; updated_at: string }
+  const { rows, error } = await query(sql, params)
+  if (error) {
+    throw error;
+  }
+  return rows[0] as { id: number; title: string; created_at: string; updated_at: string }
 }
