@@ -11,9 +11,22 @@ export interface ProviderConfig {
 
 // Define available models for fallback (provider-specific, no cross-provider fallback)
 export const AVAILABLE_MODELS = {
-  gemini: ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
-  mistral: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
+  gemini: [
+    'gemini-2.5-pro',       // 🔥 Best reasoning, best overall
+    'gemini-2.0-flash',     // Great balance, very capable
+    'gemini-1.5-pro',       // Older but strong
+    'gemini-1.5-flash',     // Fast & cheap
+    'gemini-2.5-flash',     // Newer flash, very efficient
+    'gemini-2.5-flash-lite' // Cheapest & fastest
+  ],
+
+  mistral: [
+    'mistral-large-latest',  // 🔥 Best Mistral model
+    'mistral-medium-latest', // Good balance
+    'mistral-small-latest'   // Fastest & cheapest
+  ]
 };
+
 
 // Get next model in fallback chain (same provider only)
 export function getNextFallbackModel(
@@ -236,8 +249,14 @@ export function getModelFromSelection(modelSelection: string): string {
   if (lower.includes('mistral-large')) return 'mistral-large-latest';
   if (lower.includes('mistral')) return 'mistral-small-latest';
 
-  if (lower.includes('gemini')) return 'gemini-2.5-flash';
-  if (lower.includes('google')) return 'gemini-2.5-flash';
+  if (lower.includes('gemini-2.5-pro')) return 'gemini-2.5-pro';
+  if (lower.includes('gemini-2.0-flash')) return 'gemini-2.0-flash';
+  if (lower.includes('gemini-1.5-pro')) return 'gemini-1.5-pro';
+  if (lower.includes('gemini-1.5-flash')) return 'gemini-1.5-flash';
+  if (lower.includes('gemini-2.5-flash-lite')) return 'gemini-2.5-flash-lite';
+  if (lower.includes('gemini-2.5-flash')) return 'gemini-2.5-flash';
+  if (lower.includes('gemini')) return 'gemini-2.5-pro';
+  if (lower.includes('google')) return 'gemini-2.5-pro';
 
   return modelSelection;
 }

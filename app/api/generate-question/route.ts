@@ -38,7 +38,6 @@ function extractJSONObject(raw: string): string {
 
     if (char === '"' && !escapeNext) {
       inString = !inString;
-      continue;
     }
 
     if (inString) {
@@ -58,6 +57,14 @@ function extractJSONObject(raw: string): string {
   }
 
   if (startIdx === -1 || endIdx === -1) {
+    // If we can't find a balanced object, try to find the largest possible JSON object
+    const firstBrace = s.indexOf('{');
+    const lastBrace = s.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      return s.substring(firstBrace, lastBrace + 1);
+    }
+
+
     // ✅ ADD THIS - Log the raw response for debugging
     console.error("❌ Could not extract JSON from response");
     console.error("   Response length:", s.length);

@@ -15,7 +15,7 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  ssl: { rejectUnauthorized: false },
   // For production, you should provide a CA certificate:
   // ca: fs.readFileSync('/path/to/your/rds-ca-bundle.pem').toString(),
 });
@@ -57,12 +57,22 @@ export const resetProblemsSequence = async () => {
     const maxIdResult = await pool.query('SELECT MAX(id) FROM public.problems');
     const maxId = maxIdResult.rows[0].max || 0; // Default to 0 if table is empty
 
-    // Set the sequence to the maxId + 1
-    await pool.query(`SELECT setval('problems_id_seq', ${maxId + 1}, false)`);
-    console.log(`problems_id_seq reset to ${maxId + 1}`);
-    return { success: true, message: `Sequence reset to ${maxId + 1}` };
+    // Dynamically get the sequence name for the 'id' column of 'public.problems' table
+    const sequenceNameResult = await pool.query(
+      `SELECT pg_get_serial_sequence('public.problems', 'id') AS sequence_name;`
+    );
+    const sequenceName = sequenceNameResult.rows[0].sequence_name;
+
+    if (!sequenceName) {
+      throw new Error('Could not determine sequence name for public.problems.id');
+    }
+
+    // Set the sequence to the maxId, with 'true' to make the NEXT value maxId + 1
+    await pool.query(`SELECT setval('${sequenceName}', ${maxId}, true)`);
+    console.log(`${sequenceName} reset to ${maxId + 1} (next value)`);
+    return { success: true, message: `Sequence reset to ${maxId + 1} (next value)` };
   } catch (error: any) {
-    console.error('Error resetting problems_id_seq:', error);
+    console.error('Error resetting problems sequence:', error);
     return { success: false, error: { message: error.message, code: error.code } };
   }
 };
