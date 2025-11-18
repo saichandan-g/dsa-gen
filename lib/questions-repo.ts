@@ -1,5 +1,5 @@
 // lib/questions-repo.ts
-import { Pool } from "pg"
+import { query } from "./rds"
 
 type GeneratedQuestion = {
   title: string
@@ -33,7 +33,6 @@ type GeneratedQuestion = {
   }
 }
 export async function getExistingTitles(
-  pool: Pool,
   opts: { topic?: string; difficulty?: "Easy" | "Medium" | "Hard"; limit?: number } = {}
 ) {
   // Pull the most relevant titles for dedup checks.
@@ -56,49 +55,52 @@ export async function getExistingTitles(
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""
   const sql = `
     SELECT title
-    FROM public.questions
+    FROM public.problems
     ${where}
     ORDER BY created_at DESC
     LIMIT ${Number.isFinite(opts.limit) ? opts.limit : 200};
   `
-  const { rows } = await pool.query(sql, params)
+  const { rows, error } = await query(sql, params)
+  if (error) {
+    throw error;
+  }
   // Return case-normalized titles to make prompt rules simpler
   return rows.map((r: { title: string }) => (r.title as string).trim())
 }
 // INSERT and return the auto id
-export async function insertQuestion(pool: Pool, q: GeneratedQuestion) {
+export async function insertQuestion(q: GeneratedQuestion) {
   const sql = `
-    INSERT INTO public.questions
-      (title, difficulty, question, input_format, output_format, constraints_text,
-       sample_input, sample_output, hint, hidden_inputs, hidden_outputs,
-       tags, companies, topic_category, subtopics, metadata)
+    INSERT INTO public.problems
+      (title, description, difficulty, test_cases, hint, tags, input_format, output_format, constraints, metadata)
     VALUES
-      ($1, $2::difficulty, $3, $4, $5, $6,
-       $7, $8::jsonb, $9, $10::text[], $11::jsonb[],
-       $12::text[], $13::text[], $14, $15::text[], $16::jsonb)
+      ($1, $2, $3::difficulty, $4::jsonb, $5, $6::text[], $7, $8, $9, $10::jsonb)
     RETURNING id, title, created_at, updated_at
   `
 
   const m = q.metadata ?? {}
+  const testCases = {
+    sample_input: q.sample_input,
+    sample_output: q.sample_output,
+    hidden_inputs: q.hidden_inputs,
+    hidden_outputs: q.hidden_outputs,
+  }
+
   const params = [
     q.title,
+    q.question, // This maps to the 'description' column
     q.difficulty,
-    q.question,
+    JSON.stringify(testCases),
+    q.hint ?? null,
+    m.tags ?? null,
     q.input_format ?? null,
     q.output_format ?? null,
-    q.constraints ?? null,              // -> constraints_text
-    q.sample_input ?? null,
-    q.sample_output ?? null,
-    q.hint ?? null,
-    q.hidden_inputs ?? null,            // text[]
-    q.hidden_outputs ?? null,           // jsonb[]
-    m.tags ?? null,                     // text[]
-    m.companies ?? null,                // text[]
-    m.topic_category ?? null,
-    m.subtopics ?? null,                // text[]
-    JSON.stringify(m)                   // metadata jsonb
+    q.constraints ?? null,
+    JSON.stringify(m)
   ]
 
-  const res = await pool.query(sql, params)
-  return res.rows[0] as { id: number; title: string; created_at: string; updated_at: string }
+  const { rows, error } = await query(sql, params)
+  if (error) {
+    throw error;
+  }
+  return rows[0] as { id: number; title: string; created_at: string; updated_at: string }
 }

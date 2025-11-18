@@ -9,15 +9,20 @@ import { CodeBlock } from "@/components/ui/code-block"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
+import { AIModelSelectionFiltered } from "@/components/AIModelSelectionFiltered"
 
 export default function GenerateQuestionsPage() {
   const [topic, setTopic] = useState("Dynamic Programming")
   const [numQuestions, setNumQuestions] = useState(1)
-  const [apiKey, setApiKey] = useState("") 
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState<any>(null)
   const [temperature, setTemperature] = useState(0.7)
   const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null)
+  
+  // ✅ ADD THESE - AI Model selection state
+  const [selectedAIModel, setSelectedAIModel] = useState<string>("")
+  const [aiApiKey, setAIApiKey] = useState<string>("")
+  const [hasSelectedModel, setHasSelectedModel] = useState(false)
   
   // Popular DSA topics for quick selection
   const popularTopics = [
@@ -25,45 +30,48 @@ export default function GenerateQuestionsPage() {
     "Heaps", "Graphs", "Hash Tables", "Dynamic Programming", "Greedy Algorithms",
     "Sorting", "Searching", "Recursion", "Backtracking", "Bit Manipulation"
   ]
-  
-  useEffect(() => {
-    // Try to get API key from environment variable
-    if (process.env.NEXT_PUBLIC_API_KEY) {
-      setApiKey(process.env.NEXT_PUBLIC_API_KEY);
-    } 
-    // If not available, try to get from localStorage (if user previously entered it)
-    else if (typeof window !== 'undefined') {
-      const savedApiKey = localStorage.getItem('dsa_api_key');
-      if (savedApiKey) {
-        setApiKey(savedApiKey);
-      }
-    }
-  }, []);
 
-  // Save API key to localStorage when it changes
-  useEffect(() => {
-    if (apiKey && typeof window !== 'undefined') {
-      localStorage.setItem('dsa_api_key', apiKey);
-    }
-  }, [apiKey]);
+  // ✅ ADD THIS - Handle model selection
+  const handleAIModelSelected = (model: string, apiKey: string) => {
+    console.log(`✅ Selected AI Model: ${model}`);
+    setSelectedAIModel(model);
+    setAIApiKey(apiKey);
+    setHasSelectedModel(true);
+  };
+
+  // ✅ ADD THIS - Show model selection component if not selected yet
+  if (!hasSelectedModel) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+        <div className="flex items-center justify-center min-h-screen p-4">
+          <div className="w-full max-w-md">
+            <AIModelSelectionFiltered onModelSelected={handleAIModelSelected} />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const handleGenerateQuestions = async (event: FormEvent) => {
     event.preventDefault()
     setIsLoading(true)
     setResults(null)
 
-    if (!apiKey) {
-      setResults({ error: "Your API Key is required to authenticate with your backend." })
+    // ✅ UPDATE THIS - Check for AI model selection
+    if (!selectedAIModel || !aiApiKey) {
+      setResults({ error: "Please select an AI model and provide its API key." })
       setIsLoading(false)
       return
     }
 
     try {
-      // Prepare request body with all parameters
+      // ✅ UPDATE THIS - Include selectedAIModel and apiKey in request body
       const requestBody: any = { 
         topic, 
         count: numQuestions,
-        temperature
+        temperature,
+        selectedAIModel,  // ✅ ADD THIS
+        apiKey: aiApiKey, // ✅ ADD THIS
       };
       
       // Add difficulty if selected
@@ -71,11 +79,18 @@ export default function GenerateQuestionsPage() {
         requestBody.difficulty = selectedDifficulty;
       }
       
+      console.log("📤 Sending request with:", {
+        topic,
+        count: numQuestions,
+        temperature,
+        model: selectedAIModel,
+        difficulty: selectedDifficulty
+      });
+
       const response = await fetch("/api/generate-question", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": apiKey,
         },
         body: JSON.stringify(requestBody),
       })
@@ -84,237 +99,217 @@ export default function GenerateQuestionsPage() {
 
       if (!response.ok) {
         setResults({
-          error: data.message || "An error occurred.",
-          details: data.errors || data.errorDetails || data.error,
+          error: data.error || `Error: ${response.status}`,
+          details: data.details || null,
         })
-      } else {
-        setResults({ success: data.message, data: data.data, errors: data.errors })
+        return
       }
-    } catch (error: any) {
-      setResults({ error: "Failed to fetch: " + error.message })
+
+      setResults({
+        success: true,
+        questions: data.questions || [],
+        message: `Generated ${(data.questions || []).length} question(s)`,
+      })
+    } catch (error) {
+      setResults({
+        error: "Failed to generate questions",
+        details: error instanceof Error ? error.message : String(error),
+      })
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Generate DSA Questions</CardTitle>
-          <CardDescription>
-            Create high-quality DSA questions using AI and save them to your database
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleGenerateQuestions} className="space-y-6">
-            {/* API Key Section */}
-            {!apiKey ? (
-              <div className="space-y-2">
-                <Label htmlFor="apiKey">Your API Key</Label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter your API key"
-                  required
-                />
-                <p className="text-sm text-muted-foreground">
-                  This is the <code>API_KEY</code> from your .env.local file
-                </p>
-              </div>
-            ) : (
-              <div className="bg-green-50 dark:bg-green-950/20 p-3 rounded-md border border-green-200 dark:border-green-900">
-                <p className="text-sm text-green-700 dark:text-green-400 flex items-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  API Key loaded successfully
-                </p>
-              </div>
-            )}
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+            Advanced DSA Question Generator
+          </h1>
+          <p className="text-gray-600 dark:text-gray-300">
+            Generate custom Data Structure & Algorithm interview questions with Gemini or Mistral
+          </p>
+          {/* ✅ ADD THIS - Show selected model */}
+          <div className="mt-4 p-3 bg-green-100 dark:bg-green-900/20 border border-green-300 dark:border-green-700 rounded-lg">
+            <p className="text-sm text-green-800 dark:text-green-300">
+              ✅ Using <strong>{selectedAIModel}</strong> for question generation
+              <button
+                onClick={() => setHasSelectedModel(false)}
+                className="ml-2 text-xs px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded"
+              >
+                Change Model
+              </button>
+            </p>
+          </div>
+        </div>
 
-            {/* Topic Selection */}
-            <div className="space-y-2">
-              <Label htmlFor="topic">Topic</Label>
-              <div className="grid grid-cols-1 gap-4">
-                <Input
-                  id="topic"
-                  type="text"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="e.g., Binary Search, Dynamic Programming"
-                  required
-                />
-                <div>
-                  <Label className="text-sm">Popular Topics</Label>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {popularTopics.map((t) => (
-                      <Badge 
-                        key={t} 
-                        variant={topic === t ? "default" : "outline"}
-                        className="cursor-pointer"
-                        onClick={() => setTopic(t)}
-                      >
-                        {t}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Generation Options */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label htmlFor="numQuestions">Number of Questions</Label>
-                <Input
-                  id="numQuestions"
-                  type="number"
-                  value={numQuestions}
-                  onChange={(e) => setNumQuestions(Math.max(1, Math.min(10, Number.parseInt(e.target.value, 10) || 1)))}
-                  min="1"
-                  max="10"
-                  required
-                />
-                <p className="text-xs text-muted-foreground">Maximum: 10 questions per request</p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="difficulty">Difficulty (Optional)</Label>
-                <Select value={selectedDifficulty || ""} onValueChange={setSelectedDifficulty}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Any difficulty" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Any difficulty</SelectItem>
-                    <SelectItem value="Easy">Easy</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="Hard">Hard</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Advanced Options */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <Label htmlFor="temperature">Creativity (Temperature)</Label>
-                <span className="text-sm text-muted-foreground">{temperature.toFixed(1)}</span>
-              </div>
-              <Slider
-                id="temperature"
-                min={0.1}
-                max={1.0}
-                step={0.1}
-                value={[temperature]}
-                onValueChange={(values) => setTemperature(values[0])}
-              />
-              <p className="text-xs text-muted-foreground">
-                Lower values produce more predictable output, higher values produce more creative output
-              </p>
-            </div>
-
-            {/* Submit Button */}
-            <Button 
-              type="submit" 
-              disabled={isLoading || !apiKey} 
-              className="w-full"
-              size="lg"
-            >
-              {isLoading ? (
-                <span className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Generating...
-                </span>
-              ) : (
-                `Generate ${numQuestions} Question${numQuestions > 1 ? 's' : ''}`
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Results Section */}
-      {results && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Generation Results</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {results.error && (
-              <div className="bg-destructive/10 border border-destructive rounded-md p-4">
-                <h3 className="text-destructive font-semibold">Error</h3>
-                <p>{results.error}</p>
-                {results.details && (
-                  <div className="mt-4">
-                    <h4 className="font-semibold mb-2">Details:</h4>
-                    <CodeBlock>{JSON.stringify(results.details, null, 2)}</CodeBlock>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {results.success && (
-              <div className="space-y-4">
-                <div className="bg-green-50 dark:bg-green-950/20 p-4 rounded-md border border-green-200 dark:border-green-900">
-                  <p className="text-green-700 dark:text-green-400 font-medium">{results.success}</p>
-                </div>
-                
-                {results.data && results.data.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Generated Questions:</h3>
-                    <div className="space-y-4">
-                      {results.data.map((question: any, index: number) => (
-                        <Card key={question.id} className="overflow-hidden">
-                          <div className="bg-muted p-3 flex justify-between items-center">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline">{question.id}</Badge>
-                              <h4 className="font-medium">{question.title}</h4>
-                              <Badge className={
-                                question.difficulty === "Easy" ? "bg-green-500" :
-                                question.difficulty === "Medium" ? "bg-yellow-500" :
-                                "bg-red-500"
-                              }>
-                                {question.difficulty}
-                              </Badge>
-                            </div>
-                            <Button variant="ghost" size="sm">View Details</Button>
-                          </div>
-                          <CardContent className="p-3">
-                            <p className="line-clamp-2 text-sm text-muted-foreground">
-                              {question.question.substring(0, 150)}...
-                            </p>
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {question.metadata?.tags.slice(0, 3).map((tag: string) => (
-                                <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>
-                              ))}
-                              {question.metadata?.tags.length > 3 && (
-                                <Badge variant="outline" className="text-xs">+{question.metadata.tags.length - 3} more</Badge>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Left Column: Form */}
+          <div className="lg:col-span-2">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle>Generation Settings</CardTitle>
+                <CardDescription>
+                  Configure parameters for question generation
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleGenerateQuestions} className="space-y-6">
+                  {/* Topic Selection */}
+                  <div className="space-y-3">
+                    <Label htmlFor="topic" className="text-base font-semibold">
+                      Topic
+                    </Label>
+                    <Input
+                      id="topic"
+                      type="text"
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      placeholder="Enter DSA topic (e.g., Dynamic Programming)"
+                      className="h-10"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {popularTopics.map((t) => (
+                        <Badge
+                          key={t}
+                          variant="outline"
+                          className="cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900"
+                          onClick={() => setTopic(t)}
+                        >
+                          {t}
+                        </Badge>
                       ))}
                     </div>
                   </div>
-                )}
-                
-                {results.errors && results.errors.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-semibold text-destructive mb-2">Generation Failures:</h3>
-                    <CodeBlock>{JSON.stringify(results.errors, null, 2)}</CodeBlock>
+
+                  {/* Number of Questions */}
+                  <div className="space-y-3">
+                    <Label htmlFor="numQuestions" className="text-base font-semibold">
+                      Number of Questions: {numQuestions}
+                    </Label>
+                    <Slider
+                      id="numQuestions"
+                      min={1}
+                      max={10}
+                      step={1}
+                      value={[numQuestions]}
+                      onValueChange={(value) => setNumQuestions(value[0])}
+                      className="h-2"
+                    />
+                  </div>
+
+                  {/* Difficulty Selection */}
+                  <div className="space-y-3">
+                    <Label htmlFor="difficulty" className="text-base font-semibold">
+                      Difficulty Level (Optional)
+                    </Label>
+                    <Select value={selectedDifficulty || ""} onValueChange={setSelectedDifficulty}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Select difficulty..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="easy">Easy</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="hard">Hard</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Temperature */}
+                  <div className="space-y-3">
+                    <Label htmlFor="temperature" className="text-base font-semibold">
+                      Temperature (Creativity): {temperature.toFixed(1)}
+                    </Label>
+                    <Slider
+                      id="temperature"
+                      min={0}
+                      max={1}
+                      step={0.1}
+                      value={[temperature]}
+                      onValueChange={(value) => setTemperature(value[0])}
+                      className="h-2"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Lower = more focused, Higher = more creative
+                    </p>
+                  </div>
+
+                  {/* Submit Button */}
+                  <Button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                  >
+                    {isLoading ? "🔄 Generating..." : "✨ Generate Questions"}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column: Results */}
+          <div className="lg:col-span-1">
+            <Card className="shadow-lg h-fit sticky top-8">
+              <CardHeader>
+                <CardTitle>Results</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!results ? (
+                  <p className="text-sm text-gray-500">
+                    Configure your settings and click "Generate Questions" to see results here.
+                  </p>
+                ) : results.error ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-red-600">❌ Error</p>
+                    <p className="text-xs text-red-500">{results.error}</p>
+                    {results.details && (
+                      <p className="text-xs text-red-400 mt-2">{results.details}</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-green-600">✅ {results.message}</p>
+                    {results.questions && results.questions.length > 0 && (
+                      <div className="space-y-2 max-h-96 overflow-y-auto">
+                        {results.questions.map((q: any, idx: number) => (
+                          <div
+                            key={idx}
+                            className="p-2 bg-gray-100 dark:bg-gray-700 rounded text-xs"
+                          >
+                            <p className="font-mono text-gray-700 dark:text-gray-300">
+                              Q{idx + 1}: {q.question_text?.substring(0, 100)}...
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Full Results Display */}
+        {results?.questions && results.questions.length > 0 && (
+          <Card className="mt-8 shadow-lg">
+            <CardHeader>
+              <CardTitle>Generated Questions ({results.questions.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                {results.questions.map((question: any, index: number) => (
+                  <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <h3 className="font-bold text-lg mb-2">Question {index + 1}</h3>
+                    <CodeBlock>{JSON.stringify(question, null, 2)}</CodeBlock>
+                  </div>
+                ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   )
 }

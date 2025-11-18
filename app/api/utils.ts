@@ -9,6 +9,98 @@ export interface ProviderConfig {
   model: string;
 }
 
+// Define available models for fallback (provider-specific, no cross-provider fallback)
+export const AVAILABLE_MODELS = {
+  gemini: [
+    'gemini-2.5-pro',       // 🔥 Best reasoning, best overall
+    'gemini-2.0-flash',     // Great balance, very capable
+    'gemini-1.5-pro',       // Older but strong
+    'gemini-1.5-flash',     // Fast & cheap
+    'gemini-2.5-flash',     // Newer flash, very efficient
+    'gemini-2.5-flash-lite' // Cheapest & fastest
+  ],
+
+  mistral: [
+    'mistral-large-latest',  // 🔥 Best Mistral model
+    'mistral-medium-latest', // Good balance
+    'mistral-small-latest'   // Fastest & cheapest
+  ]
+};
+
+
+// Get next model in fallback chain (same provider only)
+export function getNextFallbackModel(
+  provider: AIProvider,
+  currentModel: string
+): { provider: AIProvider; model: string } | null {
+  const models = AVAILABLE_MODELS[provider];
+  const currentIndex = models.indexOf(currentModel);
+
+  // Try next model in same provider only
+  if (currentIndex >= 0 && currentIndex < models.length - 1) {
+    return {
+      provider,
+      model: models[currentIndex + 1],
+    };
+  }
+
+  // No more models available in this provider
+  return null;
+}
+
+export async function callAIProviderWithFallback(
+  initialConfig: ProviderConfig,
+  prompt: string,
+  systemPrompt?: string,
+  apiKeys?: Record<string, string>
+): Promise<string | null> {
+  let currentConfig = initialConfig;
+  let attemptCount = 0;
+  const maxAttempts = AVAILABLE_MODELS[initialConfig.provider].length;
+
+  while (attemptCount < maxAttempts) {
+    try {
+      attemptCount++;
+      console.log(
+        `🔄 Attempt ${attemptCount}/${maxAttempts}: Using ${currentConfig.provider} - ${currentConfig.model}`
+      );
+      
+      const result = await callAIProvider(currentConfig, prompt, systemPrompt);
+      console.log(`✅ Success with ${currentConfig.provider} - ${currentConfig.model}`);
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(
+        `❌ Failed with ${currentConfig.provider} - ${currentConfig.model}:`,
+        errorMessage
+      );
+
+      if (attemptCount >= maxAttempts) {
+        console.error(`❌ All ${maxAttempts} attempts exhausted for ${initialConfig.provider}`);
+        throw error;
+      }
+
+      // Get next model in same provider
+      const fallback = getNextFallbackModel(currentConfig.provider, currentConfig.model);
+      if (!fallback) {
+        console.error(`❌ No fallback model available for ${initialConfig.provider}`);
+        throw error;
+      }
+
+      currentConfig = {
+        ...currentConfig,
+        ...fallback,
+      };
+
+      console.log(`🔄 Trying fallback: ${fallback.provider} - ${fallback.model}`);
+      // Add a small delay before retry
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  throw new Error(`Failed to get response from ${initialConfig.provider} models`);
+}
+
 export async function callAIProvider(
   config: ProviderConfig,
   prompt: string,
@@ -16,31 +108,85 @@ export async function callAIProvider(
 ): Promise<string | null> {
   if (config.provider === 'gemini') {
     try {
+      console.log("🤖 Calling Gemini API with model:", config.model);
       const genAI = new GoogleGenerativeAI(config.apiKey);
-      const model = genAI.getGenerativeModel({ model: config.model });
+      const model = genAI.getGenerativeModel({
+        model: config.model,
+        systemInstruction: systemPrompt || undefined,
+      });
 
-      const chat = model.startChat({
-        history: systemPrompt ? [{ role: "user", parts: [{ text: systemPrompt }] }, { role: "model", parts: [{ text: "Okay, I understand." }] }] : [],
+      const result = await model.generateContent({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: prompt }],
+          },
+        ],
         generationConfig: {
-          maxOutputTokens: 2000,
+          maxOutputTokens: 8192,
+          temperature: 0.3,
+          topP: 1.0,
+          topK: 1,
         },
       });
 
-      const result = await chat.sendMessage(prompt);
       const response = result.response;
-      const text = response.text();
       
-      if (!text) {
+      // ✅ Detailed logging for debugging
+      console.log("📊 Gemini Response Details:");
+      console.log("   - Status:", response.candidates?.[0]?.finishReason);
+      console.log("   - SafetyRatings:", response.candidates?.[0]?.safetyRatings);
+      
+      // ✅ FIX #1: Robust response extraction with fallback
+      let text: string | null = null;
+      try {
+        text = response.text();
+      } catch (extractError) {
+        console.error("⚠️ Failed to extract text using response.text():", extractError);
+        // Try alternative extraction
+        const candidates = response.candidates?.[0];
+        if (candidates?.content?.parts?.[0]) {
+          text = candidates.content.parts[0]?.text || null;
+          console.log("✅ Successfully extracted text from candidates.content.parts");
+        }
+      }
+      
+      console.log("✅ Gemini response received, length:", text?.length);
+      
+      // ✅ Better empty response handling
+      if (!text || text.trim().length === 0) {
+        const finishReason = response.candidates?.[0]?.finishReason;
+        const safetyRatings = response.candidates?.[0]?.safetyRatings;
+        
+        console.error("❌ Gemini returned empty response");
+        console.error("   Finish Reason:", finishReason);
+        console.error("   Safety Ratings:", safetyRatings);
+        
+        // ✅ Handle MAX_TOKENS
+        if (finishReason === 'MAX_TOKENS') {
+          throw new Error('Response exceeded max tokens. The prompt or expected output is too large. Try reducing complexity.');
+        }
+        
+        // Check if it was blocked by safety filter
+        if (finishReason === 'SAFETY') {
+          throw new Error('Response blocked by safety filter. Try rephrasing your prompt.');
+        }
+        
         throw new Error('Empty response from Gemini API');
       }
       
       return text;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Gemini API error: ${errorMessage}`);
+      console.error("❌ Gemini API error:", errorMessage);
+      console.error("   Full error details:", error);
+      
+      // Let error propagate naturally for retry logic to handle
+      throw error;
     }
   } else if (config.provider === 'mistral') {
     try {
+      console.log("🤖 Calling Mistral API with model:", config.model);
       const client = new Mistral({ apiKey: config.apiKey });
       const chatResponse = await client.chat.complete({
         model: config.model,
@@ -66,6 +212,8 @@ export async function callAIProvider(
         Array.isArray(content) ? content.map((c: any) => typeof c === 'string' ? c : (c.text || '')).join('') : 
         '';
       
+      console.log("✅ Mistral response received, length:", textContent?.length);
+      
       if (!textContent) {
         throw new Error('No text content in Mistral response');
       }
@@ -73,6 +221,15 @@ export async function callAIProvider(
       return textContent;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("❌ Mistral API error:", errorMessage);
+      
+      // Handle specific Mistral API errors
+      if (errorMessage.includes('Status 429') && errorMessage.includes('Service tier capacity exceeded')) {
+        console.warn("⏳ Mistral API capacity exceeded, waiting 5 seconds before retry...");
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        throw new Error(`Mistral API capacity exceeded: ${errorMessage}`); // Re-throw to trigger fallback/retry
+      }
+
       throw new Error(`Mistral API error: ${errorMessage}`);
     }
   }
@@ -100,8 +257,14 @@ export function getModelFromSelection(modelSelection: string): string {
   if (lower.includes('mistral-large')) return 'mistral-large-latest';
   if (lower.includes('mistral')) return 'mistral-small-latest';
 
-  if (lower.includes('gemini')) return 'gemini-2.5-flash';
-  if (lower.includes('google')) return 'gemini-2.5-flash';
+  if (lower.includes('gemini-2.5-pro')) return 'gemini-2.5-pro';
+  if (lower.includes('gemini-2.0-flash')) return 'gemini-2.0-flash';
+  if (lower.includes('gemini-1.5-pro')) return 'gemini-1.5-pro';
+  if (lower.includes('gemini-1.5-flash')) return 'gemini-1.5-flash';
+  if (lower.includes('gemini-2.5-flash-lite')) return 'gemini-2.5-flash-lite';
+  if (lower.includes('gemini-2.5-flash')) return 'gemini-2.5-flash';
+  if (lower.includes('gemini')) return 'gemini-2.5-pro';
+  if (lower.includes('google')) return 'gemini-2.5-pro';
 
   return modelSelection;
 }
