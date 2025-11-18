@@ -60,8 +60,6 @@ export async function getExistingTitles(
     ORDER BY created_at DESC
     LIMIT ${Number.isFinite(opts.limit) ? opts.limit : 200};
   `
-  console.log("Executing SQL:", sql);
-  console.log("With params:", params);
   const { rows, error } = await query(sql, params)
   if (error) {
     throw error;

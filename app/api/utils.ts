@@ -222,6 +222,14 @@ export async function callAIProvider(
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("❌ Mistral API error:", errorMessage);
+      
+      // Handle specific Mistral API errors
+      if (errorMessage.includes('Status 429') && errorMessage.includes('Service tier capacity exceeded')) {
+        console.warn("⏳ Mistral API capacity exceeded, waiting 5 seconds before retry...");
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        throw new Error(`Mistral API capacity exceeded: ${errorMessage}`); // Re-throw to trigger fallback/retry
+      }
+
       throw new Error(`Mistral API error: ${errorMessage}`);
     }
   }

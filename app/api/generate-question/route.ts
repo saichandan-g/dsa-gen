@@ -57,15 +57,31 @@ function extractJSONObject(raw: string): string {
   }
 
   if (startIdx === -1 || endIdx === -1) {
-    // If we can't find a balanced object, try to find the largest possible JSON object
+    // Fallback: try to find the first and last brace and assume it's the JSON object
+    let potentialJson = '';
     const firstBrace = s.indexOf('{');
     const lastBrace = s.lastIndexOf('}');
+
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      return s.substring(firstBrace, lastBrace + 1);
+      potentialJson = s.substring(firstBrace, lastBrace + 1);
+    } else {
+      // If no braces found, or malformed, try to find a JSON-like string
+      const jsonRegex = /\{[\s\S]*\}/;
+      const match = s.match(jsonRegex);
+      if (match && match[0]) {
+        potentialJson = match[0];
+      }
     }
 
+    if (potentialJson) {
+      try {
+        JSON.parse(potentialJson); // Validate if it's actually valid JSON
+        return potentialJson;
+      } catch (e) {
+        console.error("⚠️ Fallback JSON extraction failed to parse:", e);
+      }
+    }
 
-    // ✅ ADD THIS - Log the raw response for debugging
     console.error("❌ Could not extract JSON from response");
     console.error("   Response length:", s.length);
     console.error("   First 200 chars:", s.substring(0, 200));
