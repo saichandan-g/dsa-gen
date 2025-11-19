@@ -181,7 +181,7 @@ export default function HomePage() {
           <CardContent className="space-y-4">
             <p>
               This platform allows you to generate, manage, and access high-quality Data Structures and Algorithms (DSA) questions
-              using AI. The questions are stored in a MongoDB database and can be accessed through a RESTful API.
+              using AI. The questions are stored in a database and can be accessed through a RESTful API.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               <Card>

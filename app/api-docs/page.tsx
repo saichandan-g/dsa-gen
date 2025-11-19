@@ -1,4 +1,4 @@
-    "use client"
+"use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CodeBlock } from "@/components/ui/code-block"
@@ -57,10 +57,10 @@ export default function HomePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold">1. MongoDB Atlas</h3>
+              <h3 className="text-lg font-semibold">1. Database Setup (PostgreSQL/RDS)</h3>
               <p>
-                Ensure you have a MongoDB Atlas cluster, a database (e.g., <code>dsa_questions</code>), and a collection
-                (e.g., <code>questions</code>). Whitelist your IP and create a database user.
+                Ensure you have a PostgreSQL database (RDS or local) with the required schema. The application uses
+                PostgreSQL as the database backend for storing DSA questions.
               </p>
             </div>
             <div>
@@ -71,7 +71,15 @@ export default function HomePage() {
               </p>
               <pre className="mt-2 p-2 bg-muted rounded text-sm overflow-x-auto">
                 <code>
-                  MONGODB_URI="your_mongodb_connection_uri"
+                  DB_HOST="your-db-host.amazonaws.com"
+                  <br />
+                  DB_PORT="5432"
+                  <br />
+                  DB_USER="your-db-username"
+                  <br />
+                  DB_PASSWORD="your-db-password"
+                  <br />
+                  DB_NAME="your-db-name"
                   <br />
                   API_KEY="your_secure_api_key"
                   <br />
@@ -79,7 +87,7 @@ export default function HomePage() {
                 </code>
               </pre>
               <p className="text-sm text-muted-foreground mt-1">
-                Replace placeholders with your actual MongoDB URI, a strong, unique API key, and your Mistral AI API
+                Replace placeholders with your actual database credentials, a strong, unique API key, and your Mistral AI API
                 key.
               </p>
             </div>

@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import connectDB from "@/lib/mongodb"
-import QuestionModel, { type IQuestion } from "@/models/question-model"
+import { query, resetProblemsSequence } from "@/lib/rds"
 
 const API_KEY = process.env.API_KEY
 
@@ -17,37 +16,60 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await connectDB()
     const body = await request.json()
 
-    // Basic validation (Mongoose will do more detailed validation)
+    // Basic validation
     if (!body.id || !body.title || !body.difficulty || !body.question || !body.metadata) {
       return NextResponse.json({ message: "Missing required fields" }, { status: 400 })
     }
 
     // Check if question with this ID already exists
-    const existingQuestion = await QuestionModel.findOne({ id: body.id })
-    if (existingQuestion) {
+    const existingQuestion = await query(
+      'SELECT id FROM public.problems WHERE id = $1',
+      [body.id]
+    )
+
+    if (existingQuestion.rows.length > 0) {
       return NextResponse.json({ message: `Question with ID ${body.id} already exists.` }, { status: 409 })
     }
 
-    const newQuestionData = body as IQuestion
-    const question = new QuestionModel(newQuestionData)
-    await question.save()
+    // Insert new question
+    const insertQuery = `
+      INSERT INTO public.problems (
+        id, title, difficulty, question, sample_input, sample_output, hint, 
+        hidden_inputs, hidden_outputs, metadata, topics, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      RETURNING *
+    `
+    
+    const insertParams = [
+      body.id,
+      body.title,
+      body.difficulty,
+      body.question,
+      body.sample_input || null,
+      body.sample_output || null,
+      body.hint || null,
+      body.hidden_inputs || [],
+      body.hidden_outputs || [],
+      JSON.stringify(body.metadata),
+      JSON.stringify(body.metadata.tags || [])
+    ]
 
-    return NextResponse.json({ message: "Question added successfully", data: question }, { status: 201 })
+    const result = await query(insertQuery, insertParams)
+
+    return NextResponse.json({ message: "Question added successfully", data: result.rows[0] }, { status: 201 })
   } catch (error: any) {
     console.error("Error adding question:", error)
-    if (error.name === "ValidationError") {
-      return NextResponse.json({ message: "Validation Error", errors: error.errors }, { status: 400 })
-    }
-    if (error.code === 11000) {
-      // Duplicate key error (e.g. for unique 'id')
+    
+    // Handle duplicate key error
+    if (error.code === '23505') {
       return NextResponse.json(
-        { message: "Duplicate key error. Ensure ID is unique.", errorDetails: error.keyValue },
+        { message: "Duplicate key error. Ensure ID is unique.", errorDetails: error.detail },
         { status: 409 },
       )
     }
+    
     return NextResponse.json({ message: "Internal Server Error", error: error.message }, { status: 500 })
   }
 }
@@ -65,35 +87,44 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    await connectDB()
     const { searchParams } = new URL(request.url)
     const id = searchParams.get("id")
     const tags = searchParams.get("tags") // e.g., "Array,Binary Search"
     const difficulty = searchParams.get("difficulty") // e.g., "Easy"
 
-    const filter: { [key: string]: any } = {}
+    let sql = 'SELECT * FROM public.problems WHERE 1=1'
+    const params: any[] = []
+    let paramIndex = 1
 
     if (id) {
-      filter.id = Number.parseInt(id)
-    }
-
-    if (tags) {
-      // Split tags by comma and use $in operator for multiple tags
-      filter["metadata.tags"] = { $in: tags.split(",").map((tag) => new RegExp(tag.trim(), "i")) }
+      sql += ` AND id = $${paramIndex}`
+      params.push(parseInt(id))
+      paramIndex++
     }
 
     if (difficulty) {
-      // Case-insensitive match for difficulty
-      filter.difficulty = new RegExp(difficulty.trim(), "i")
+      sql += ` AND difficulty ILIKE $${paramIndex}`
+      params.push(difficulty.trim())
+      paramIndex++
     }
 
-    const questions = await QuestionModel.find(filter)
+    if (tags) {
+      // For PostgreSQL, we'll use the topics JSON array
+      sql += ` AND topics && $${paramIndex}`
+      const tagArray = tags.split(",").map(tag => tag.trim())
+      params.push(tagArray)
+      paramIndex++
+    }
 
-    if (id && questions.length === 0) {
+    sql += ' ORDER BY created_at DESC'
+
+    const result = await query(sql, params)
+
+    if (id && result.rows.length === 0) {
       return NextResponse.json({ message: "Question not found" }, { status: 404 })
     }
 
-    return NextResponse.json(questions, { status: 200 })
+    return NextResponse.json(result.rows, { status: 200 })
   } catch (error: any) {
     console.error("Error fetching questions:", error)
     return NextResponse.json({ message: "Internal Server Error", error: error.message }, { status: 500 })
