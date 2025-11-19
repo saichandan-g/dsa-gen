@@ -52,7 +52,7 @@ export async function callAIProviderWithFallback(
   initialConfig: ProviderConfig,
   prompt: string,
   systemPrompt?: string,
-  apiKeys?: Record<string, string>
+  temperature?: number
 ): Promise<string | null> {
   let currentConfig = initialConfig;
   let attemptCount = 0;
@@ -65,7 +65,7 @@ export async function callAIProviderWithFallback(
         `🔄 Attempt ${attemptCount}/${maxAttempts}: Using ${currentConfig.provider} - ${currentConfig.model}`
       );
       
-      const result = await callAIProvider(currentConfig, prompt, systemPrompt);
+      const result = await callAIProvider(currentConfig, prompt, systemPrompt, temperature);
       console.log(`✅ Success with ${currentConfig.provider} - ${currentConfig.model}`);
       return result;
     } catch (error) {
@@ -104,7 +104,8 @@ export async function callAIProviderWithFallback(
 export async function callAIProvider(
   config: ProviderConfig,
   prompt: string,
-  systemPrompt?: string
+  systemPrompt?: string,
+  temperature?: number
 ): Promise<string | null> {
   if (config.provider === 'gemini') {
     try {
@@ -188,12 +189,20 @@ export async function callAIProvider(
     try {
       console.log("🤖 Calling Mistral API with model:", config.model);
       const client = new Mistral({ apiKey: config.apiKey });
+      
+      // ✨ Mistral-specific creative generation config
+      const mistralTemperature = temperature !== undefined ? Math.max(0.9, temperature) : 1.0;
+      console.log(`🎨 Using Mistral creative temperature: ${mistralTemperature}`);
+      
       const chatResponse = await client.chat.complete({
         model: config.model,
         messages: [
           ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
           { role: 'user' as const, content: prompt },
         ] as any,
+        temperature: mistralTemperature,
+        top_p: 0.95,
+        max_tokens: 8192,
       });
       
       if (!chatResponse.choices || chatResponse.choices.length === 0) {
