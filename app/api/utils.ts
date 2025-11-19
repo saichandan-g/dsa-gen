@@ -201,8 +201,8 @@ export async function callAIProvider(
           { role: 'user' as const, content: prompt },
         ] as any,
         temperature: mistralTemperature,
-        top_p: 0.95,
-        max_tokens: 8192,
+        topP: 0.95,
+        maxTokens: 8192,
       });
       
       if (!chatResponse.choices || chatResponse.choices.length === 0) {
